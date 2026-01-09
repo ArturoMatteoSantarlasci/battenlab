@@ -1,0 +1,5 @@
+{
+  "name": "Moitech x PoliMi Sailing Team Bend Test",
+  "description": "A professional engineering tool for calculating sailboat batten bend characteristics, including EI stiffness, camber percentage, and front/back bend ratios based on standard test measurements.",
+  "requestFramePermissions": []
+}
