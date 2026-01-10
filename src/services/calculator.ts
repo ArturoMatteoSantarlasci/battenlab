@@ -1,5 +1,5 @@
 
-import { BattenInputs, BattenResults } from '../types';
+import { BattenInputs, BattenResults, BattenSegment } from '../types';
 
 /**
  * Calculates sailboat batten characteristics.
@@ -50,6 +50,48 @@ export const calculateBattenBehavior = (inputs: BattenInputs): BattenResults => 
     averageEi: Number(ei.toFixed(3)),
     deflection: d12,
     draftPosition: Number(draftPos.toFixed(1))
+  };
+};
+
+/**
+ * Calculates the Equivalent EI for a composite batten made of segments.
+ * Uses the principle of virtual work / integration of curvature for a 3-point bending test.
+ * EI_eq = L^3 / (24 * Integral(0->L/2) of x^2/EI(x) dx)
+ */
+export const calculateEquivalentEI = (segments: BattenSegment[]) => {
+  const totalLength = segments.reduce((sum, s) => sum + s.length, 0);
+  const totalLengthM = totalLength / 1000;
+  const halfLengthM = totalLengthM / 2;
+  
+  let currentPosM = 0;
+  let integralM = 0;
+
+  // Integrate x^2 / EI(x) from 0 to L/2
+  for (const seg of segments) {
+    const lenM = seg.length / 1000;
+    const segStartM = currentPosM;
+    const segEndM = currentPosM + lenM;
+    
+    // Determine the intersection of this segment with the first half of the beam [0, L/2]
+    const intStartM = Math.max(0, segStartM);
+    const intEndM = Math.min(halfLengthM, segEndM);
+    
+    if (intEndM > intStartM && seg.ei > 0) {
+      // Integral of x^2 dx = x^3 / 3
+      const term = (Math.pow(intEndM, 3) - Math.pow(intStartM, 3)) / (3 * seg.ei);
+      integralM += term;
+    }
+    
+    currentPosM += lenM;
+    if (currentPosM >= halfLengthM) break; // Optimization
+  }
+
+  // Formula: EI_eq = L^3 / (24 * Integral)
+  const eqEi = integralM > 0 ? Math.pow(totalLengthM, 3) / (24 * integralM) : 0;
+
+  return {
+    eqEi: Number(eqEi.toFixed(3)),
+    totalLength: totalLength
   };
 };
 

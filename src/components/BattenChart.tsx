@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Label, ReferenceDot } from 'recharts';
 import { BattenInputs } from '../types';
 import { generateCurvePoints } from '../services/calculator';
 
@@ -11,7 +10,10 @@ interface BattenChartProps {
 
 const BattenChart: React.FC<BattenChartProps> = ({ inputs, draftPos }) => {
   const data = generateCurvePoints(inputs);
-  const draftX = (draftPos / 100) * inputs.testLength;
+  // Calcolo della posizione X assoluta in mm basata sulla percentuale del draft
+  // Fallback se draftPos non è valido
+  const validDraftPos = isNaN(draftPos) ? 50 : draftPos;
+  const draftX = (validDraftPos / 100) * inputs.testLength;
 
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -21,7 +23,7 @@ const BattenChart: React.FC<BattenChartProps> = ({ inputs, draftPos }) => {
         </svg>
         Visualizzazione Profilo Stecca
       </h2>
-      <div className="h-[90px] md:h-[180px] w-full">
+      <div className="h-[220px] w-full">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={data}
@@ -43,6 +45,8 @@ const BattenChart: React.FC<BattenChartProps> = ({ inputs, draftPos }) => {
               tickLine={false}
               axisLine={false}
               interval="preserveStartEnd"
+              type="number"
+              domain={[0, 'dataMax']}
             />
             <YAxis 
               reversed 
@@ -67,24 +71,41 @@ const BattenChart: React.FC<BattenChartProps> = ({ inputs, draftPos }) => {
               isAnimationActive={true}
               animationDuration={600}
             />
-            <ReferenceLine x={draftX} stroke="#dc2626" strokeDasharray="5 5">
-               <Label 
-                  value="CALC DRAFT" 
-                  position="top" 
-                  fill="#dc2626" 
-                  fontSize={9} 
-                  fontWeight="bold"
-                  offset={10}
-               />
-            </ReferenceLine>
+            
+            {/* Linea Verticale che scende dal marker */}
+            <ReferenceLine x={draftX} stroke="#dc2626" strokeDasharray="3 3" strokeOpacity={0.5} />
+            
+            {/* Pallino Rosso ben visibile all'origine (y=0) */}
+            <ReferenceDot 
+              x={draftX} 
+              y={0} 
+              r={6} 
+              fill="#dc2626" 
+              stroke="#fff" 
+              strokeWidth={2} 
+              isFront={true}
+            />
+
+            {/* Etichetta Testuale sotto il pallino */}
+            <ReferenceDot x={draftX} y={0} r={0} isFront={true}>
+              <Label 
+                value={`DRAFT ${validDraftPos}%`} 
+                position="bottom" 
+                fill="#dc2626" 
+                fontSize={11} 
+                fontWeight="bold"
+                offset={8}
+              />
+            </ReferenceDot>
+
           </AreaChart>
         </ResponsiveContainer>
       </div>
       <div className="mt-4 flex justify-between text-[10px] text-slate-400 font-bold uppercase tracking-widest px-2">
         <span>LUFF (0%)</span>
-        <div className="text-[#A12B2B] flex items-center gap-1">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#A12B2B]"></div>
-          DRAFT AT {draftPos}%
+        <div className="text-[#A12B2B] flex items-center gap-1 opacity-80">
+          <span className="w-2 h-2 rounded-full bg-[#dc2626] border border-white shadow-sm inline-block mr-1"></span>
+          POSIZIONE DRAFT
         </div>
         <span>LEECH (100%)</span>
       </div>

@@ -28,3 +28,8 @@ export interface SavedProfile {
   inputs: BattenInputs;
   date: string;
 }
+
+export interface BattenSegment {
+  length: number; // mm
+  ei: number;     // N·m²
+}
