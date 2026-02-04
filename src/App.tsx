@@ -1,11 +1,13 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { toPng } from 'html-to-image';
 import BattenForm from './components/BattenForm';
 import BattenChart from './components/BattenChart';
 import ResultsDisplay from './components/ResultsDisplay';
 import CompositeCalculator from './components/CompositeCalculator';
 import { BattenInputs, SavedProfile } from './types';
 import { calculateBattenBehavior } from './services/calculator';
+import { exportBattenExcel } from './services/exportExcel';
 
 const DEFAULT_INPUTS: BattenInputs = {
   testWeight: 2.0,
@@ -82,12 +84,76 @@ const SavedProfilesModal: React.FC<{
   );
 }
 
+const ExportNameModal: React.FC<{
+  isOpen: boolean;
+  value: string;
+  isExporting: boolean;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ isOpen, value, isExporting, onChange, onCancel, onConfirm }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <h2 className="text-lg font-bold text-slate-800">Nome file</h2>
+          <button onClick={onCancel} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-500">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="p-6 space-y-3">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="Nome file..."
+            autoFocus
+            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#A12B2B]"
+          />
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 text-xs font-bold uppercase tracking-widest hover:border-slate-300 transition-colors"
+          >
+            Annulla
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={isExporting}
+            className="px-4 py-2 rounded-lg bg-[#A12B2B] text-white text-xs font-bold uppercase tracking-widest hover:bg-[#8B2424] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {isExporting ? "Export..." : "Esporta"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
   const [inputs, setInputs] = useState<BattenInputs>(DEFAULT_INPUTS);
   const [profileName, setProfileName] = useState("");
   const [savedProfiles, setSavedProfiles] = useState<SavedProfile[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportFileName, setExportFileName] = useState("");
+  const [primaryProfileId, setPrimaryProfileId] = useState("");
+  const [compareProfileId, setCompareProfileId] = useState("");
+  const chartRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('batten_profiles');
@@ -101,6 +167,15 @@ const App: React.FC = () => {
   }, []);
 
   const results = useMemo(() => calculateBattenBehavior(inputs), [inputs]);
+  const primaryProfile = useMemo(
+    () => savedProfiles.find((p) => p.id === primaryProfileId) ?? null,
+    [savedProfiles, primaryProfileId]
+  );
+  const compareProfile = useMemo(
+    () => savedProfiles.find((p) => p.id === compareProfileId) ?? null,
+    [savedProfiles, compareProfileId]
+  );
+  const isComparing = Boolean(compareProfileId);
 
   const handleInputChange = (updates: Partial<BattenInputs>) => {
     setInputs((prev) => ({ ...prev, ...updates }));
@@ -127,6 +202,88 @@ const App: React.FC = () => {
     localStorage.setItem('batten_profiles', JSON.stringify(updated));
   };
 
+  const handleSelectPrimaryProfile = (id: string) => {
+    setPrimaryProfileId(id);
+    const profile = savedProfiles.find((p) => p.id === id);
+    if (profile) {
+      setInputs(profile.inputs);
+    }
+    if (id && id === compareProfileId) {
+      setCompareProfileId("");
+    }
+  };
+
+  const handleSelectCompareProfile = (id: string) => {
+    if (id && id === primaryProfileId) {
+      setCompareProfileId("");
+      return;
+    }
+    setCompareProfileId(id);
+  };
+
+  const toggleCompareOpen = () => {
+    setIsCompareOpen((prev) => {
+      const next = !prev;
+      if (!next) {
+        setCompareProfileId("");
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (primaryProfileId && !primaryProfile) {
+      setPrimaryProfileId("");
+    }
+    if (compareProfileId && !compareProfile) {
+      setCompareProfileId("");
+    }
+  }, [primaryProfileId, compareProfileId, primaryProfile, compareProfile]);
+
+  const captureChartImage = async () => {
+    if (!chartRef.current) return null;
+    if (document.fonts?.ready) {
+      try {
+        await document.fonts.ready;
+      } catch {
+        // If font loading fails, continue with capture
+      }
+    }
+    return toPng(chartRef.current, {
+      cacheBust: true,
+      backgroundColor: "#ffffff",
+      pixelRatio: 2,
+    });
+  };
+
+  const openExportModal = () => {
+    if (isExporting || isComparing) return;
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    const suggestedName = primaryProfile?.name
+      ? `${primaryProfile.name}_${dateStamp}`
+      : `BattenLab_${dateStamp}`;
+    setExportFileName(suggestedName);
+    setIsExportModalOpen(true);
+  };
+
+  const handleExportExcel = async () => {
+    if (isExporting) return;
+    setIsExportModalOpen(false);
+    setIsExporting(true);
+    try {
+      const chartImageDataUrl = await captureChartImage();
+      if (!chartImageDataUrl) {
+        throw new Error("Grafico non disponibile per lo screenshot.");
+      }
+      await exportBattenExcel(inputs, chartImageDataUrl, exportFileName);
+    } catch (error) {
+      console.error("Export failed", error);
+      alert("Errore durante l'esportazione Excel.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
       <div className="min-h-screen bg-slate-50 text-slate-900 pb-12 font-sans">
         <header className="bg-white border-b border-slate-200 py-8 mb-8 shadow-sm">
@@ -143,6 +300,30 @@ const App: React.FC = () => {
                   alt="MOITECH"
                   className="h-10 md:h-14 w-auto object-contain"
               />
+              {viewMode === 'dashboard' && (
+                isComparing ? (
+                  <button
+                    disabled
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-slate-100 text-slate-400 text-xs font-bold uppercase tracking-widest cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l4-4m-4 4l-4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                    </svg>
+                    Export disabilitato
+                  </button>
+                ) : (
+                  <button
+                    onClick={openExportModal}
+                    disabled={isExporting}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-bold uppercase tracking-widest hover:border-[#A12B2B] hover:text-[#A12B2B] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l4-4m-4 4l-4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" />
+                    </svg>
+                    {isExporting ? "Export..." : "Export Excel"}
+                  </button>
+                )
+              )}
             </div>
             <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto justify-end mt-4 md:mt-0">
               <div className="flex bg-slate-100 p-1 rounded-lg mr-2">
@@ -203,11 +384,84 @@ const App: React.FC = () => {
                         </button>
                       </div>
                     </div>
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={toggleCompareOpen}
+                        className="w-full flex items-center justify-between text-sm font-bold text-slate-800 uppercase tracking-wider"
+                      >
+                        <span className="flex items-center">
+                          <svg className="w-4 h-4 mr-2 text-[#2563eb]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3v18h18M7 15l3-3 4 4 5-5" />
+                          </svg>
+                          Confronto Profili
+                        </span>
+                        <svg
+                          className={`w-4 h-4 text-slate-400 transition-transform ${isCompareOpen ? "rotate-180" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      {isCompareOpen && (
+                        <div className="mt-4">
+                          {savedProfiles.length === 0 ? (
+                            <p className="text-xs text-slate-400">Salva almeno un profilo per attivare il confronto.</p>
+                          ) : (
+                            <div className="grid grid-cols-1 gap-3">
+                              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                                Profilo A
+                              </label>
+                              <select
+                                value={primaryProfileId}
+                                onChange={(e) => handleSelectPrimaryProfile(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#A12B2B]"
+                              >
+                                <option value="">Input correnti</option>
+                                {savedProfiles.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name} • {p.date}
+                                  </option>
+                                ))}
+                              </select>
+                              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                                Profilo B
+                              </label>
+                              <select
+                                value={compareProfileId}
+                                onChange={(e) => handleSelectCompareProfile(e.target.value)}
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2563eb]"
+                              >
+                                <option value="">Nessun confronto</option>
+                                {savedProfiles
+                                  .filter((p) => p.id !== primaryProfileId)
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} • {p.date}
+                                    </option>
+                                  ))}
+                              </select>
+                              <p className="text-[11px] text-slate-400">
+                                Seleziona due profili salvati per sovrapporre le curve.
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <BattenForm inputs={inputs} onChange={handleInputChange} />
                   </div>
                   <div className="lg:col-span-7 space-y-6">
                     <ResultsDisplay results={results} />
-                    <BattenChart inputs={inputs} draftPos={results.draftPosition} />
+                    <BattenChart
+                      inputs={inputs}
+                      draftPos={results.draftPosition}
+                      comparisonInputs={compareProfile?.inputs}
+                      comparisonLabel={compareProfile?.name}
+                      containerRef={chartRef}
+                    />
                   </div>
                 </div>
               </div>
@@ -222,8 +476,22 @@ const App: React.FC = () => {
             isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
             profiles={savedProfiles}
-            onLoad={(p) => setInputs(p.inputs)}
+            onLoad={(p) => {
+              setInputs(p.inputs);
+              setPrimaryProfileId(p.id);
+              if (p.id === compareProfileId) {
+                setCompareProfileId("");
+              }
+            }}
             onDelete={deleteProfile}
+        />
+        <ExportNameModal
+          isOpen={isExportModalOpen}
+          value={exportFileName}
+          isExporting={isExporting}
+          onChange={setExportFileName}
+          onCancel={() => setIsExportModalOpen(false)}
+          onConfirm={handleExportExcel}
         />
 
         <footer className="mt-12 text-center text-slate-400 text-[9px] border-t border-slate-200 pt-8 uppercase tracking-[0.2em] font-black">

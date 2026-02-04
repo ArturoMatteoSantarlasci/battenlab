@@ -6,17 +6,34 @@ import { generateCurvePoints } from '../services/calculator';
 interface BattenChartProps {
   inputs: BattenInputs;
   draftPos: number;
+  comparisonInputs?: BattenInputs | null;
+  comparisonLabel?: string;
+  containerRef?: React.RefObject<HTMLDivElement>;
 }
 
-const BattenChart: React.FC<BattenChartProps> = ({ inputs, draftPos }) => {
-  const data = generateCurvePoints(inputs);
+const BattenChart: React.FC<BattenChartProps> = ({
+  inputs,
+  draftPos,
+  comparisonInputs,
+  comparisonLabel,
+  containerRef,
+}) => {
+  const primaryPoints = generateCurvePoints(inputs);
+  const comparisonPoints = comparisonInputs ? generateCurvePoints(comparisonInputs) : null;
+  const data = primaryPoints.map((point, index) => ({
+    x: point.x,
+    y: point.y,
+    yCompare: comparisonPoints ? comparisonPoints[index]?.y : undefined,
+  }));
   // Calcolo della posizione X assoluta in mm basata sulla percentuale del draft
   // Fallback se draftPos non è valido
   const validDraftPos = isNaN(draftPos) ? 50 : draftPos;
   const draftX = (validDraftPos / 100) * inputs.testLength;
 
+  const compareName = comparisonLabel ? `Confronto: ${comparisonLabel}` : "Profilo confronto";
+
   return (
-    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+    <div ref={containerRef} className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
       <h2 className="text-lg font-semibold mb-4 text-slate-800 flex items-center">
         <svg className="w-5 h-5 mr-2 text-[#A12B2B]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
@@ -70,7 +87,22 @@ const BattenChart: React.FC<BattenChartProps> = ({ inputs, draftPos }) => {
               fill="url(#colorY)" 
               isAnimationActive={true}
               animationDuration={600}
+              name="Profilo attuale"
             />
+            {comparisonPoints && (
+              <Area
+                type="monotone"
+                dataKey="yCompare"
+                stroke="#2563eb"
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                fillOpacity={0}
+                fill="transparent"
+                isAnimationActive={true}
+                animationDuration={600}
+                name={compareName}
+              />
+            )}
             
             {/* Linea Verticale che scende dal marker */}
             <ReferenceLine x={draftX} stroke="#dc2626" strokeDasharray="3 3" strokeOpacity={0.5} />
