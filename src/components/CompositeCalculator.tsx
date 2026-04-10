@@ -42,14 +42,15 @@ const CompositeCalculator: React.FC = () => {
     };
 
     const getValue = (val: number) => isNaN(val) ? '' : val;
+    const eqEiDisplay = result.isValid ? result.eqEi : '--';
 
     return (
         <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
                 <div className="bg-slate-800 p-6 text-white flex items-center justify-between">
                     <div>
-                        <h2 className="text-xl font-black uppercase tracking-tighter">Calcolo Stecca Composta (Forward)</h2>
-                        <p className="text-xs text-slate-400 font-bold tracking-widest">EI Totale dai Singoli Pezzi</p>
+                        <h2 className="text-xl font-black uppercase tracking-tighter">Calcolo Stecca Composta</h2>
+                        <p className="text-xs text-slate-400 font-bold tracking-widest">EI Equivalente su Lunghezza Completa</p>
                     </div>
                     <div className="flex items-center gap-4">
                         <button
@@ -80,27 +81,33 @@ const CompositeCalculator: React.FC = () => {
                             </div>
                             <p className="text-xs text-slate-600 leading-relaxed">
                                 Il calcolatore determina la <strong>rigidezza flessionale equivalente (EI<sub>eq</sub>)</strong> di una trave composta da segmenti discreti con EI variabile.
-                                Il calcolo si basa sull'equazione della linea elastica, integrando la curvatura generata da un carico concentrato in mezzeria per ottenere la deflessione teorica (δ).
+                                Il calcolo si basa sull'equazione della linea elastica per una prova a 3 punti con carico concentrato in mezzeria e considera <strong>tutta la lunghezza assemblata</strong>, non solo la prima meta.
                             </p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
                                 <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
                                     <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">1. Integrazione Curvatura</p>
                                     <p className="text-xs text-slate-600 font-mono bg-slate-50 p-2 rounded border border-slate-100 mb-2">
-                                        Integral = ∫ (x² / EI(x)) dx
+                                        S = ∫[0,L/2] x^2/EI(x) dx + ∫[L/2,L] (L-x)^2/EI(x) dx
                                     </p>
                                     <p className="text-[10px] text-slate-500">
-                                        Si calcola l'integrale del momento flettente normalizzato diviso per la rigidezza locale di ogni segmento lungo la semiluce (0 → L/2).
+                                        Si integra la cedevolezza flessionale su entrambe le semiluci. Nella seconda meta il peso del contributo dipende dalla distanza dalla mezzeria del tratto verso il supporto destro.
                                     </p>
                                 </div>
                                 <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
                                     <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">2. EI Equivalente</p>
                                     <p className="text-xs text-slate-600 font-mono bg-slate-50 p-2 rounded border border-slate-100 mb-2">
-                                        EI<sub>eq</sub> = L<sup>3</sup> / (24 · Integral)
+                                        EI<sub>eq</sub> = L<sup>3</sup> / (12 · S)
                                     </p>
                                     <p className="text-[10px] text-slate-500">
                                         Si ricava l'EI costante che produrrebbe la stessa identica deflessione massima (δ) della trave segmentata sotto lo stesso carico.
                                     </p>
                                 </div>
+                            </div>
+                            <div className="bg-amber-50 p-4 rounded-lg border border-amber-200 shadow-sm">
+                                <p className="text-[10px] font-bold text-amber-700 uppercase mb-2">Interpretazione Dei Pezzi</p>
+                                <p className="text-[10px] text-amber-800 leading-relaxed">
+                                    I pezzi sono letti nell'ordine in cui compaiono negli input, da un'estremita all'altra della stecca. Dividere un tratto in piu pezzi con lo stesso EI non cambia il risultato; cambia invece la distribuzione di lunghezze, EI e posizione dei pezzi lungo la stecca.
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -108,6 +115,9 @@ const CompositeCalculator: React.FC = () => {
 
                 <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-12">
                     <div className="space-y-4">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                            Il numero di pezzi incide solo se modifichi lunghezze, EI o il loro ordine lungo la stecca.
+                        </p>
                         {segments.slice(0, numSegments).map((s, idx) => (
                             <div key={idx} className="p-4 bg-slate-50 border border-slate-200 rounded-xl grid grid-cols-2 gap-4">
                                 <div className="space-y-1">
@@ -139,7 +149,7 @@ const CompositeCalculator: React.FC = () => {
                             <div>
                                 <p className="text-[10px] font-bold uppercase opacity-60 tracking-[0.3em]">Rigidezza Equivalente Totale</p>
                                 <div className="flex items-baseline justify-center gap-2">
-                                    <span className="text-7xl font-black">{result.eqEi}</span>
+                                    <span className="text-7xl font-black">{eqEiDisplay}</span>
                                     <span className="text-sm font-bold opacity-60">N·m²</span>
                                 </div>
                             </div>
@@ -147,6 +157,12 @@ const CompositeCalculator: React.FC = () => {
                                 <p className="text-[10px] font-bold uppercase opacity-40">Lunghezza Totale Assemblata</p>
                                 <p className="text-xl font-black">{result.totalLength} <span className="text-[10px] opacity-40">mm</span></p>
                             </div>
+                            {!result.isValid && (
+                                <div className="pt-4 border-t border-white/10">
+                                    <p className="text-[10px] font-bold uppercase opacity-60">Dato non valido</p>
+                                    <p className="text-xs leading-relaxed opacity-90">{result.error}</p>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

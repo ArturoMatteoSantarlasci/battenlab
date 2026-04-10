@@ -55,43 +55,92 @@ export const calculateBattenBehavior = (inputs: BattenInputs): BattenResults => 
 
 /**
  * Calculates the Equivalent EI for a composite batten made of segments.
- * Uses the principle of virtual work / integration of curvature for a 3-point bending test.
- * EI_eq = L^3 / (24 * Integral(0->L/2) of x^2/EI(x) dx)
+ * Uses the principle of virtual work / integration of curvature for a simply
+ * supported 3-point bending test with a centered point load.
+ *
+ * For a generic non-symmetric batten, the equivalent bending stiffness is:
+ * EI_eq = L^3 / (12 * [∫(0->L/2) x^2/EI(x) dx + ∫(L/2->L) (L-x)^2/EI(x) dx])
  */
 export const calculateEquivalentEI = (segments: BattenSegment[]) => {
-  const totalLength = segments.reduce((sum, s) => sum + s.length, 0);
+  const totalLength = segments.reduce((sum, s) => {
+    return sum + (Number.isFinite(s.length) ? s.length : 0);
+  }, 0);
+
+  if (segments.length === 0) {
+    return {
+      eqEi: 0,
+      totalLength: 0,
+      isValid: false,
+      error: 'Inserisci almeno un pezzo.'
+    };
+  }
+
+  if (segments.some((seg) => !Number.isFinite(seg.length) || seg.length <= 0)) {
+    return {
+      eqEi: 0,
+      totalLength,
+      isValid: false,
+      error: 'Ogni pezzo deve avere una lunghezza maggiore di 0 mm.'
+    };
+  }
+
+  if (segments.some((seg) => !Number.isFinite(seg.ei) || seg.ei <= 0)) {
+    return {
+      eqEi: 0,
+      totalLength,
+      isValid: false,
+      error: 'Ogni pezzo deve avere un EI maggiore di 0 N·m².'
+    };
+  }
+
   const totalLengthM = totalLength / 1000;
   const halfLengthM = totalLengthM / 2;
-  
-  let currentPosM = 0;
-  let integralM = 0;
 
-  // Integrate x^2 / EI(x) from 0 to L/2
+  if (totalLengthM <= 0) {
+    return {
+      eqEi: 0,
+      totalLength,
+      isValid: false,
+      error: 'La lunghezza totale deve essere maggiore di 0 mm.'
+    };
+  }
+
+  let currentPosM = 0;
+  let complianceIntegral = 0;
+
+  // Integrate the compliance term over the full span.
   for (const seg of segments) {
     const lenM = seg.length / 1000;
     const segStartM = currentPosM;
     const segEndM = currentPosM + lenM;
-    
-    // Determine the intersection of this segment with the first half of the beam [0, L/2]
-    const intStartM = Math.max(0, segStartM);
-    const intEndM = Math.min(halfLengthM, segEndM);
-    
-    if (intEndM > intStartM && seg.ei > 0) {
-      // Integral of x^2 dx = x^3 / 3
-      const term = (Math.pow(intEndM, 3) - Math.pow(intStartM, 3)) / (3 * seg.ei);
-      integralM += term;
+
+    const leftStartM = Math.max(0, segStartM);
+    const leftEndM = Math.min(halfLengthM, segEndM);
+    if (leftEndM > leftStartM) {
+      complianceIntegral += (Math.pow(leftEndM, 3) - Math.pow(leftStartM, 3)) / (3 * seg.ei);
     }
-    
-    currentPosM += lenM;
-    if (currentPosM >= halfLengthM) break; // Optimization
+
+    const rightStartM = Math.max(halfLengthM, segStartM);
+    const rightEndM = Math.min(totalLengthM, segEndM);
+    if (rightEndM > rightStartM) {
+      complianceIntegral += (
+        Math.pow(totalLengthM - rightStartM, 3) -
+        Math.pow(totalLengthM - rightEndM, 3)
+      ) / (3 * seg.ei);
+    }
+
+    currentPosM = segEndM;
   }
 
-  // Formula: EI_eq = L^3 / (24 * Integral)
-  const eqEi = integralM > 0 ? Math.pow(totalLengthM, 3) / (24 * integralM) : 0;
+  const eqEi = complianceIntegral > 0
+    ? Math.pow(totalLengthM, 3) / (12 * complianceIntegral)
+    : 0;
 
   return {
     eqEi: Number(eqEi.toFixed(3)),
-    totalLength: totalLength
+    totalLength,
+    isValid: eqEi > 0,
+    error: eqEi > 0 ? null : 'Impossibile calcolare EI equivalente con questi dati.'
   };
 };
 
